@@ -1,0 +1,32 @@
+{
+  "name": "@tokens/dsh-loop-guard",
+  "version": "0.1.0",
+  "description": "TokensCowork loop guard: near-duplicate tool-call detection with escalating reminders and a hard stop.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "identity.js",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  }
+}

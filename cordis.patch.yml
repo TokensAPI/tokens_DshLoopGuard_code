@@ -1,0 +1,6 @@
+# TokensCowork loop guard: replaces the upstream repeat-tool-reminder
+# (disabled at the desktop bundle layer) with near-duplicate detection and
+# a hard stop. Defaults live in identity.js; override per field here.
+- insert:
+    - id: tokens-loop-guard
+      name: '@tokens/dsh-loop-guard'
