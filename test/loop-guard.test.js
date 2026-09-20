@@ -66,6 +66,19 @@ test('exact repeats hard-block at blockThreshold', async () => {
   assert.match(h.reminders(eighth)[0], /blocked your last "bash" call/)
 })
 
+test('block holds past the threshold: every later call is blocked too', async () => {
+  const h = createHarness()
+  for (let index = 0; index < 7; index += 1) await h.call('bash', { command: 'grep x /f' })
+  await h.call('bash', { command: 'grep x /f' })
+  const ninth = await h.call('bash', { command: 'grep x /f' })
+  assert.equal(ninth.kind, 'block')
+  assert.match(ninth.feedback[0].text, /9 consecutive calls/)
+  // 只在跨阈值那一次注入插件通知,后续阻断不再追加
+  assert.equal(h.reminders(ninth).length, 0)
+  const tenth = await h.call('bash', { command: 'grep x /f' })
+  assert.equal(tenth.kind, 'block')
+})
+
 test('argument property order does not evade exact matching', async () => {
   const h = createHarness()
   await h.call('bash', { command: 'ls /a', description: 'x' })
@@ -98,6 +111,8 @@ test('fuzzy chain hard-blocks at fuzzyBlockThreshold', async () => {
   const twelfth = await h.call('bash', { command: 'cat /data/f11.log' })
   assert.equal(twelfth.kind, 'block')
   assert.match(twelfth.feedback[0].text, /same command shape with only literal changes/)
+  const thirteenth = await h.call('bash', { command: 'cat /data/f12.log' })
+  assert.equal(thirteenth.kind, 'block')
 })
 
 test('different command shapes reset the fuzzy chain', async () => {

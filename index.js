@@ -201,9 +201,13 @@ export function apply(ctx, config) {
 
     // 纯精确链由精确路径处置;骨架路径只在链发生漂移(字面量变化)时介入。
     const drifted = chain.fuzzyCount > chain.exactCount
-    if (chain.exactCount === blockThreshold) return { block: true, fuzzy: false, count: chain.exactCount }
-    if (drifted && chain.fuzzyCount === fuzzyBlockThreshold) {
-      return { block: true, fuzzy: true, count: chain.fuzzyCount }
+    // 阻断必须"守住":达到阈值后的每一次调用都阻断,只在跨阈值那一次附通知,
+    // 避免模型在被明确指示继续时越过单次阻断继续循环。
+    if (chain.exactCount >= blockThreshold) {
+      return { block: true, fuzzy: false, count: chain.exactCount, first: chain.exactCount === blockThreshold }
+    }
+    if (drifted && chain.fuzzyCount >= fuzzyBlockThreshold) {
+      return { block: true, fuzzy: true, count: chain.fuzzyCount, first: chain.fuzzyCount === fuzzyBlockThreshold }
     }
     if (remindSet.has(chain.exactCount)) {
       return {
@@ -232,10 +236,15 @@ export function apply(ctx, config) {
         type: 'text',
         text: blockFeedback(exec.name, action.count, action.fuzzy),
       }]
+      // 每次被阻断的调用都以 isError 纠错反馈呈现;插件通知只在跨阈值那一次注入,
+      // 后续阻断靠反馈本身约束,不再追加消息。
+      const contexts = action.first === true
+        ? [blockNotice(exec.name, action.count), ...downstream.additionalContexts ?? []]
+        : downstream.additionalContexts ?? []
       return {
         kind: 'block',
         feedback,
-        additionalContexts: [blockNotice(exec.name, action.count), ...downstream.additionalContexts ?? []],
+        ...contexts.length > 0 ? { additionalContexts: contexts } : {},
       }
     }
     if (!action?.reminder) return downstream
