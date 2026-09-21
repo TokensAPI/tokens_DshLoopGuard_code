@@ -14,6 +14,27 @@ const DEFAULT_CONFIG = {
   argumentsPreviewChars: 500,
 }
 
+test('batched exact and fuzzy notices have unique durable user-message identities', async () => {
+  const notices = []
+  for (const fuzzy of [false, true]) {
+    const h = createHarness()
+    for (let i = 1; i <= 16; i++) {
+      const decision = await h.call('bash', { command: fuzzy ? `cat /tmp/file${i}.txt` : 'echo loop-guard-test' })
+      notices.push(...decision.additionalContexts ?? [])
+      if (i >= (fuzzy ? 12 : 8)) assert.equal(decision.kind, 'block')
+    }
+    await h.userMessage()
+    assert.equal((await h.call('bash', { command: 'echo loop-guard-test' })).kind, 'accept')
+  }
+  assert.equal(notices.length, 6)
+  assert.equal(new Set(notices.map(m => m.id)).size, 6)
+  for (const message of notices) {
+    assert.match(message.id, /^[0-9a-f-]{36}$/)
+    assert.equal(message.role, 'user')
+    assert.deepEqual(JSON.parse(JSON.stringify(message)), message)
+  }
+})
+
 /** 最小 cordis 替身:捕获 listener,按注册序驱动 post-execute 瀑布。 */
 function createHarness(config = DEFAULT_CONFIG) {
   const listeners = new Map()

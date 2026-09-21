@@ -7,6 +7,7 @@
 // "硬阻断"是 PostToolDecision 的 block 决定:结果被替换为 isError + 纠正指引,
 // 并附带一条插件消息要求模型停下来向用户汇报。
 import z from '@deepseek-ai/schemastery'
+import { randomUUID } from 'node:crypto'
 import {
   ARGUMENTS_PREVIEW_CHARS,
   BLOCK_THRESHOLD,
@@ -120,6 +121,8 @@ function blockFeedback(toolName, count, fuzzy) {
 
 function blockNotice(toolName, count) {
   return {
+    id: randomUUID(),
+    role: 'user',
     content: [{
       type: 'text',
       text: `The loop guard blocked your last "${toolName}" call after ${count} consecutive repeats. Stop this line of trial-and-error and report to the user: what you tried, what you learned, and what you need next.`,
@@ -212,6 +215,8 @@ export function apply(ctx, config) {
     if (remindSet.has(chain.exactCount)) {
       return {
         reminder: {
+          id: randomUUID(),
+          role: 'user',
           content: [{ type: 'text', text: exactReminder(exec.name, chain.exactCount, canonical, cap) }],
           source: { ...PLUGIN_SOURCE, form: 'notice', summary: `${exec.name} × ${chain.exactCount}` },
         },
@@ -220,6 +225,8 @@ export function apply(ctx, config) {
     if (drifted && fuzzyRemindSet.has(chain.fuzzyCount)) {
       return {
         reminder: {
+          id: randomUUID(),
+          role: 'user',
           content: [{ type: 'text', text: fuzzyReminder(exec.name, chain.fuzzyCount, skeletonize(parsed), cap) }],
           source: { ...PLUGIN_SOURCE, form: 'notice', summary: `${exec.name} ≈ ${chain.fuzzyCount}` },
         },
