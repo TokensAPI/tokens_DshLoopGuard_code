@@ -66,8 +66,11 @@ TokensCowork 产品内置本插件时,装配层(`build/modules/guard/loop-guard-
 
 ```bash
 npm install
-npm test          # node --test,12 项:双链计数、阈值提醒、硬阻断、排除与重置、配置校验
+npm test          # node --test,21 项:双链计数、阈值提醒、持续阻断、流式文本退化截断、配置校验
 ```
+
+需要真实模型 endpoint 的端到端测试在 `test/e2e/`(默认不参与 `npm test`,
+endpoint 不可达自动跳过),运行方式见 [test/e2e/README.md](test/e2e/README.md)。
 
 核心文件:
 
