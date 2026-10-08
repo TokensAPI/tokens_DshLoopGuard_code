@@ -17,3 +17,17 @@ export const FUZZY_TOOLS = ['bash', 'pwsh', 'terminal', 'edit', 'write', 'str_re
 export const INCLUDE = []
 export const EXCLUDE = ['todo_write']
 export const ARGUMENTS_PREVIEW_CHARS = 500
+
+/* ------------------------- 生成内文本退化护栏 ------------------------- */
+// 模型在单次响应内陷入 "Let me X / `--` X" 式碎片循环时,在 llm/stream 层
+// 截断该文本块:吞掉后续 delta、替换 block-end 的装配文本为截断版。
+// 退化文本因此永远不会进入会话历史,切断"历史喂养新一轮退化"的自增强回路。
+export const TEXT_GUARD_ENABLED = true
+// 文本块累计字符数达到此值后才开始判定(短文本不检,避免误伤正常旁白)
+export const TEXT_GUARD_MIN_CHARS = 1500
+// 同一规范化行重复出现该次数即判定退化
+export const TEXT_GUARD_MAX_REPEAT_LINES = 10
+// 计入重复统计的最小行长度(更短的行不参与计数)
+export const TEXT_GUARD_MIN_LINE_LEN = 8
+// 硬性上限:无论是否命中重复特征,文本块超过该字符数一律截断(0 = 不启用)
+export const TEXT_GUARD_MAX_CHARS = 24000

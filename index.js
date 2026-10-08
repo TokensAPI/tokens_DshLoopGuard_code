@@ -17,6 +17,11 @@ import {
   FUZZY_TOOLS,
   INCLUDE,
   REMIND_THRESHOLDS,
+  TEXT_GUARD_ENABLED,
+  TEXT_GUARD_MAX_CHARS,
+  TEXT_GUARD_MAX_REPEAT_LINES,
+  TEXT_GUARD_MIN_CHARS,
+  TEXT_GUARD_MIN_LINE_LEN,
 } from './identity.js'
 
 export const name = 'tokens-loop-guard'
@@ -30,6 +35,11 @@ export const Config = z.object({
   include: z.array(z.string()).default(INCLUDE),
   exclude: z.array(z.string()).default(EXCLUDE),
   argumentsPreviewChars: z.number().default(ARGUMENTS_PREVIEW_CHARS),
+  textGuardEnabled: z.boolean().default(TEXT_GUARD_ENABLED),
+  textGuardMinChars: z.number().default(TEXT_GUARD_MIN_CHARS),
+  textGuardMaxRepeatLines: z.number().default(TEXT_GUARD_MAX_REPEAT_LINES),
+  textGuardMinLineLen: z.number().default(TEXT_GUARD_MIN_LINE_LEN),
+  textGuardMaxChars: z.number().default(TEXT_GUARD_MAX_CHARS),
 })
 
 const PLUGIN_SOURCE = { kind: 'plugin', plugin: 'tokens-loop-guard' }
@@ -131,6 +141,103 @@ function blockNotice(toolName, count) {
   }
 }
 
+/* --------------------------- 生成内文本退化检测 --------------------------- */
+
+/**
+ * 逐行重复检测器。把文本增量按行切分、规范化( trim + 折叠空白)后计数;
+ * 文本量超过 minChars 且任一行的重复数达到 maxRepeatLines 即判定退化。
+ * 只统计长度 >= minLineLen 的行,短标记行("Click.")不参与,降低误伤。
+ */
+class RepeatLineDetector {
+  constructor({ minChars, maxRepeatLines, minLineLen, maxChars }) {
+    this.minChars = minChars
+    this.maxRepeatLines = maxRepeatLines
+    this.minLineLen = minLineLen
+    this.maxChars = maxChars
+    this.text = ''
+    this.counts = new Map()
+    this.topLine = ''
+    this.topCount = 0
+    this.hardCapped = false
+  }
+
+  feed(delta) {
+    this.text += delta
+    if (this.maxChars > 0 && this.text.length > this.maxChars) {
+      this.hardCapped = true
+      return
+    }
+    // 只对完整行计数;最后一个不完整行等下一次增量再处理
+    const newline = this.text.lastIndexOf('\n')
+    if (newline < 0) return
+    const start = this._scanned ?? 0
+    const segment = this.text.slice(start, newline)
+    if (segment.length > 0) {
+      for (const raw of segment.split('\n')) {
+        const line = raw.trim().replace(/\s+/g, ' ')
+        if (line.length < this.minLineLen) continue
+        const count = (this.counts.get(line) ?? 0) + 1
+        this.counts.set(line, count)
+        if (count > this.topCount) {
+          this.topCount = count
+          this.topLine = line
+        }
+      }
+    }
+    this._scanned = newline + 1
+  }
+
+  get degenerate() {
+    if (this.hardCapped) return true
+    return this.text.length >= this.minChars && this.topCount >= this.maxRepeatLines
+  }
+}
+
+function truncateNotice(topLine, topCount, hardCapped) {
+  if (hardCapped) return '\n\n[loop-guard] Output exceeded the configured maximum length and was truncated.'
+  return `\n\n[loop-guard] Repetitive output detected ("${topLine.slice(0, 60)}" repeated ${topCount} times) — generation truncated to keep the session log clean. Continue with a tool call or a different approach.`
+}
+
+/**
+ * 包装下游 chunk 流:命中退化的文本/推理块,吞掉后续 delta,并把 block-end
+ * 的装配块替换为截断版。其他块(工具调用等)原样透传。
+ * 会话持久化的是截断后的文本,退化内容永远不会进入历史。
+ */
+export async function* guardStream(stream, config) {
+  const detectors = new Map()
+  const truncated = new Map()
+  for await (const chunk of stream) {
+    if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
+      const key = `${chunk.type}:${chunk.index}`
+      if (truncated.has(key)) continue
+      let detector = detectors.get(key)
+      if (detector === undefined) {
+        detector = new RepeatLineDetector(config)
+        detectors.set(key, detector)
+      }
+      detector.feed(chunk.text)
+      if (detector.degenerate) {
+        truncated.set(key, detector.hardCapped)
+        yield { type: 'text-delta', index: chunk.index, text: truncateNotice(detector.topLine, detector.topCount, detector.hardCapped) }
+        continue
+      }
+      yield chunk
+      continue
+    }
+    if (chunk.type === 'block-end' && chunk.block !== null && typeof chunk.block === 'object'
+      && (chunk.block.type === 'text' || chunk.block.type === 'reasoning')) {
+      const key = `${chunk.block.type === 'text' ? 'text-delta' : 'reasoning-delta'}:${chunk.index}`
+      if (truncated.has(key)) {
+        const detector = detectors.get(key)
+        const kept = (detector?.text ?? '') + truncateNotice(detector?.topLine ?? '', detector?.topCount ?? 0, truncated.get(key))
+        yield { ...chunk, block: { ...chunk.block, text: kept } }
+        continue
+      }
+    }
+    yield chunk
+  }
+}
+
 /* ------------------------------ 校验 ------------------------------ */
 
 function validateThresholds(list, label) {
@@ -166,6 +273,24 @@ export function apply(ctx, config) {
   const fuzzyBlockThreshold = validateBlockThreshold(config.fuzzyBlockThreshold, fuzzyRemindThresholds, 'fuzzyBlockThreshold')
   if (!Number.isInteger(config.argumentsPreviewChars) || config.argumentsPreviewChars < 1) {
     throw new Error(`tokens-loop-guard: invalid argumentsPreviewChars ${config.argumentsPreviewChars} — must be an integer >= 1`)
+  }
+  if (config.textGuardEnabled === true) {
+    for (const [label, value, min] of [
+      ['textGuardMinChars', config.textGuardMinChars, 200],
+      ['textGuardMaxRepeatLines', config.textGuardMaxRepeatLines, 3],
+      ['textGuardMinLineLen', config.textGuardMinLineLen, 4],
+    ]) {
+      if (!Number.isInteger(value) || value < min) throw new Error(`tokens-loop-guard: ${label} must be an integer >= ${min}`)
+    }
+    if (!Number.isInteger(config.textGuardMaxChars) || config.textGuardMaxChars < 0) {
+      throw new Error('tokens-loop-guard: textGuardMaxChars must be an integer >= 0 (0 disables the hard cap)')
+    }
+  }
+  const textGuardConfig = {
+    minChars: config.textGuardMinChars,
+    maxRepeatLines: config.textGuardMaxRepeatLines,
+    minLineLen: config.textGuardMinLineLen,
+    maxChars: config.textGuardMaxChars,
   }
   const remindSet = new Set(remindThresholds)
   const fuzzyRemindSet = new Set(fuzzyRemindThresholds)
@@ -272,4 +397,10 @@ export function apply(ctx, config) {
     if (messages.some(message => message.source.kind === 'user')) chains.delete(agent)
     return next()
   })
+
+  // 生成内文本退化护栏:在 llm/stream 层截断退化输出,阻止其进入会话历史。
+  // 会话推导(deriveMessages)与请求保持一致——被截断的响应本身就是持久化内容。
+  if (config.textGuardEnabled === true) {
+    ctx.on('llm/stream', (options, next) => guardStream(next(), textGuardConfig))
+  }
 }

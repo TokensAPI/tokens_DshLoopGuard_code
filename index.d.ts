@@ -23,3 +23,13 @@ export declare function apply(ctx: unknown, config: {
   exclude: string[]
   argumentsPreviewChars: number
 }): void
+
+export declare function guardStream(
+  stream: AsyncIterable<unknown>,
+  config: {
+    minChars: number
+    maxRepeatLines: number
+    minLineLen: number
+    maxChars: number
+  },
+): AsyncGenerator<unknown>

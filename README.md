@@ -42,6 +42,22 @@ TokensCowork 的循环护栏插件，npm 包名为 `@tokens/dsh-loop-guard`。�
 | `exclude` | `[todo_write]` | 不跟踪这些工具(不计数也不重置) |
 | `argumentsPreviewChars` | `500` | 提醒消息中参数预览的字符上限 |
 
+## 生成内文本退化护栏
+
+除工具调用链外,插件还在 `llm/stream` 层监控模型的文本/推理输出:单次响应内
+同一规范化行重复达到阈值(默认 10 次,文本量超过 1500 字符后判定),即截断该
+文本块——吞掉后续 delta,把 block-end 的装配文本替换为截断版并附一行说明。
+退化内容因此**永远不会进入会话历史**,切断"历史喂养新一轮退化"的自增强回路;
+同响应里的工具调用块不受影响,照常透传。另设硬上限(默认 24000 字符)兜底。
+
+对应真实会话形态:模型在单次响应里无限重复 "Let me read/click X" 式碎片,
+最极端一次输出 147K 字符、0 个工具调用直至 maxTokens 截断。此类失效不产生
+工具调用,调用链护栏无从计数,只能由本层拦截。
+
+配置字段:`textGuardEnabled`(默认 true)、`textGuardMinChars`(1500)、
+`textGuardMaxRepeatLines`(10)、`textGuardMinLineLen`(8)、
+`textGuardMaxChars`(24000,0 = 关闭硬上限)。
+
 ## 与上游护栏的关系
 
 TokensCowork 产品内置本插件时,装配层(`build/modules/guard/loop-guard-overlay.mjs`)会在 Desktop 补丁层停用上游 `repeat-tool-reminder`,避免同一次重复注入两条提醒;本插件未启用时上游护栏保持兜底。
