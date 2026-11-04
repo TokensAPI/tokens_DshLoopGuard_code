@@ -42,7 +42,10 @@ export const Config = z.object({
   textGuardMaxChars: z.number().default(TEXT_GUARD_MAX_CHARS),
 })
 
-const PLUGIN_SOURCE = { kind: 'plugin', plugin: 'tokens-loop-guard' }
+// DSH 0.2 (session format v4) refuses the retired `{ kind: 'plugin', plugin }` wrapper and
+// rejects the whole append, which wedges the session on every later turn. The producer owns
+// its kind, as upstream repeat-tool-reminder does with `{ kind: 'repeat-tool-reminder' }`.
+const PLUGIN_SOURCE = { kind: 'tokens-loop-guard' }
 
 /* ------------------------------ 参数指纹 ------------------------------ */
 

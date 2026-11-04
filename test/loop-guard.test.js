@@ -32,6 +32,10 @@ test('batched exact and fuzzy notices have unique durable user-message identitie
     assert.match(message.id, /^[0-9a-f-]{36}$/)
     assert.equal(message.role, 'user')
     assert.deepEqual(JSON.parse(JSON.stringify(message)), message)
+    // Session format v4 (DSH 0.2) refuses `kind: 'plugin'`; the producer owns its kind.
+    assert.equal(message.source.kind, 'tokens-loop-guard')
+    assert.equal('plugin' in message.source, false)
+    assert.equal(message.source.form, 'notice')
   }
 })
 
