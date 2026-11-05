@@ -1,6 +1,6 @@
 {
   "name": "@tokens/dsh-loop-guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TokensCowork loop guard: near-duplicate tool-call detection with escalating reminders and a hard stop.",
   "type": "module",
   "main": "index.js",
